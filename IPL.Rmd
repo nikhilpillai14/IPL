@@ -1,0 +1,347 @@
+---
+title: "IPL"
+author: "Nikhil Pillai"
+date: "22 September 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(knitr)
+library(ggplot2)
+library(corrplot)
+library(fmsb)
+
+```
+
+##Reading the data
+```{r}
+ipl = read.csv("C:/Users/Administrator/Desktop/EDA/IPL/IPL.csv")
+```
+
+
+### Dimension and structure of data 
+```{r}
+dim(ipl)
+str(ipl)
+```
+
+
+### Percentage of missing values in each columns  
+```{r}
+na.percent = colSums(is.na(ipl))/nrow(ipl)*100
+na.percent
+```
+
+### There are no null values present in the data set 
+
+
+### Percentage of data availibility in each column
+```{r}
+data_avalibility_percent = colSums(!is.na(ipl))/nrow(ipl)*100
+data_avalibility_percent
+```
+
+### The code shows 100 % data whereas there are missing values in the columns: Player_dismissed, dismissal_kind and fielder.  
+
+
+### Univariant analysis (Dimensional columns)
+```{r}
+col_name = "batting_team"
+frequency = ipl %>% group_by(Group=get(col_name)) %>% summarise(Total = n(), percent = n()/nrow(ipl)*100) 
+kable(frequency)
+ggplot(frequency, aes(x=Group,y=percent)) + geom_bar(stat='identity') + coord_flip() + theme_bw()
+```
+
+
+### Univariant analysis (numerical columns)
+```{r}
+hist(ipl$total_runs)
+boxplot(ipl$total_runs)
+summary(ipl$total_runs)
+```
+
+
+### Total Runs vs attributes 
+```{r}
+attribute_name = "batting_team"
+bivariant_analysis = ipl %>% group_by(Group = get(attribute_name)) %>% summarise(Total_Runs=sum(total_runs)) 
+View(bivariant_analysis)
+ggplot(bivariant_analysis, aes(x=Group, y=Total_Runs)) + geom_bar(stat='identity') + coord_flip() + theme_bw()
+```
+
+
+### Top batsman against runs scored
+```{r}
+
+Batsman_runs = ipl %>% group_by(batsman) %>% summarise(Total_Runs=sum(total_runs)) %>% arrange(-Total_Runs)
+Top_batsman = head(Batsman_runs,10)
+Top_batsman
+ggplot(Top_batsman, aes(x=batsman, y=Total_Runs)) + geom_bar(stat='identity') + coord_flip() + theme_bw()
+```
+
+### Bowlers given most number of runs 
+```{r}
+bowler_runs = ipl %>% group_by(bowler) %>% summarise(Total_Runs=sum(total_runs)) %>% arrange(-Total_Runs)
+Top_bowlers = head(bowler_runs,10)
+Top_bowlers
+ggplot(Top_bowlers, aes(x=bowler, y=Total_Runs)) + geom_bar(stat='identity') + coord_flip() + theme_bw()
+```
+
+
+### PCA
+```{r}
+ipl_pca = ipl[,c("wide_runs","bye_runs","legbye_runs","noball_runs","penalty_runs","batsman_runs","extra_runs","total_runs")]
+
+eigen_vectors = eigen(cor(ipl_pca))$vectors
+eigen_values = eigen(cor(ipl_pca))$values 
+
+dim(ipl_pca)
+dim(eigen_vectors)
+
+ipl_pcs = scale(ipl_pca) %*% eigen_vectors
+```
+
+
+### Cross check eqivalence of pcs variance and eigen values
+```{r}
+print(var(ipl_pcs[,1]))
+print(eigen_values[1])
+```
+
+
+### Cross check correlation matrix
+```{r}
+corr_ipl_pcs = cor(ipl_pcs)
+corrplot(corr_ipl_pcs, method = "number")
+```
+
+
+### Identifying the number of columns to ignore 
+```{r}
+eigen_values/length(eigen_values)*100 
+
+vars_cum = cumsum(eigen_values/ length(eigen_values)*100)
+vars_cum
+
+cor(ipl_pcs[,2], ipl_pcs[,3])
+```
+
+#### The correlation between the pc's will be nearly zero as all pc's are orthogonal to each other 
+#### Each pc's has an impact on the output but the same impact is there in other pc's
+#### We can infer that the last three columns compute to 100% accuracy 
+
+
+##Getting dates
+```{r, include=FALSE}
+ipl = ipl %>% mutate(date = as.Date(date, "%d-%m-%Y"))
+ipl = ipl %>% mutate(Day = format(date, "%d"), Month = format(date, "%B"), Year = format(date, "%Y"), Week = weekdays(date))
+```
+
+```{r, include=FALSE}
+
+ipl = ipl %>% mutate(Wide_runs_count = if_else(wide_runs == 0, 0, 1))
+ipl = ipl %>% mutate(Bye_runs_count = if_else(bye_runs == 0, 0, 1))
+ipl = ipl %>% mutate(Legbye_runs_count = if_else(legbye_runs == 0, 0, 1))
+ipl = ipl %>% mutate(Noball_runs_count = if_else(noball_runs == 0, 0, 1))
+ipl = ipl %>% mutate(Penalty_runs_count = if_else(penalty_runs == 0, 0, 1)) 
+ipl = ipl %>% mutate(Batsman_runs_count = if_else(batsman_runs == 0, 0, 1))
+ipl = ipl %>% mutate(Total_runs_count = if_else(total_runs == 0, 0, 1))
+ipl = ipl %>% mutate(Sixes = if_else(batsman_runs == 6, 1, 0))
+ipl = ipl %>% mutate(Fours = if_else(batsman_runs == 4, 1, 0))
+ipl = ipl %>% mutate(Wickets = if_else(dismissal_kind == '', 0, 1))
+
+```
+
+
+##Yearwise Purple Cap Winners.
+```{r}
+ipl = ipl %>%
+  mutate(Wickets = if_else(dismissal_kind == '' , 0, 1))
+
+purple_cap = ipl %>%
+  group_by(Year, bowler) %>%
+  summarise(No_of_wickets = sum(Wickets)) %>%
+  arrange(Year) %>%
+  filter(No_of_wickets == max(No_of_wickets))
+
+ggplot(purple_cap, aes(x = Year, y = No_of_wickets, fill = bowler)) + geom_bar(stat = 'identity') + theme_bw() + labs(title = 'Purple Cap Winners')
+```
+
+##Yearwise Orange Cap Winners.
+```{r}
+orange_cap = ipl %>%
+  group_by(Year,batsman) %>%
+  summarise(Runs_scored = sum(total_runs)) %>%
+  arrange(Year) %>%
+  filter(Runs_scored == max(Runs_scored))
+
+ggplot(orange_cap, aes(x = Year, y = Runs_scored, fill = batsman)) + geom_bar(stat = 'identity') + theme_bw() + labs(title = 'Orange Cap Winners')
+
+lmn = ipl %>%
+  group_by(Year,batting_team, batsman) %>%
+  summarise(Runs_scored = sum(total_runs)) %>%
+  arrange(Year, -Runs_scored) %>%
+  filter(Runs_scored == max(Runs_scored))
+
+```
+
+##Average runs per year
+```{r}
+No_of_teams = ipl %>%
+  group_by(Year) %>%
+  summarise(Teams = length(unique(batting_team)))
+
+ipl2 = ipl %>%
+  group_by(Year) %>%
+  mutate(Teams = length(unique(batting_team)))
+
+Avg_runs_team = ipl2 %>%
+  group_by(Year) %>%
+  summarise(Runs = sum(total_runs), Avg_runs = sum(total_runs)/max(Teams))
+
+kable(Avg_runs_team)
+```
+
+##Run distribution of top ten run scorers by year
+```{r}
+player_runs = ipl %>%
+  group_by(batsman) %>%
+  summarise(Runs = sum(total_runs)) %>%
+  arrange(-Runs)
+
+player_runs = head(player_runs, 10)
+Top_ten_players = ipl[ipl$batsman %in% player_runs$batsman, ]
+
+ggplot(Top_ten_players, aes(x = Year, y = total_runs)) + geom_bar(fill = 'navy', stat = 'identity') + facet_wrap(~batsman) + theme(axis.text.x = element_text(angle = 90)) + labs(title = 'Run distribution of top ten run scorers by year')
+
+```
+
+##Average runs per team
+```{r}
+abc = ipl %>% 
+  group_by(match_id, batting_team, Year) %>% 
+  summarise(team_score = sum(total_runs)) %>% 
+  arrange(match_id)
+
+winning_team = abc %>% 
+  group_by(match_id, Year) %>% 
+  filter(team_score == max(team_score))
+
+wins = winning_team %>%
+  group_by(batting_team) %>%
+  summarise(No_of_wins = n()) %>%
+  arrange(-No_of_wins)
+
+
+four_teams = head(wins, 4)
+Top_four_teams = ipl[ipl$batting_team %in% four_teams$batting_team | ipl$bowling_team %in% four_teams$batting_team, ]
+
+Total_runs = ipl %>%
+  group_by(batting_team) %>%
+  summarise(Runs = sum(total_runs)/length(unique(match_id))) %>%
+  arrange(-Runs)
+
+```
+
+```{r}
+ggplot(Total_runs, aes(x = batting_team, y = Runs, group = 1)) + geom_bar(stat = 'identity', fill = 'red') + theme(axis.text.x = element_text(angle = 90))
+```
+
+
+
+##Total runs by over
+```{r}
+runs = ipl %>% 
+  group_by(over) %>% 
+  summarise(total_runs_over = sum(batsman_runs)) %>%
+  arrange(-total_runs_over)
+kable(runs)
+```
+
+
+
+##Teamwise batting and bowling average
+```{r}
+Teams_best1 = ipl %>% group_by(batting_team) %>% summarise(Runs = sum(total_runs),Sixes = sum(Sixes),Fours = sum(Fours),Strike_rate = sum(total_runs)/n()*100)
+
+Teams_best2 = ipl %>% group_by(bowling_team) %>% summarise(Wick = sum(Wickets),Bowl_avg = sum(total_runs)/sum(Wickets))
+
+Teams_best = cbind(Teams_best1,Teams_best2)
+Teams_best = Teams_best %>%
+  mutate(Batting_avg = Runs/Wick)
+
+Teams_best5 = Teams_best %>%
+  select(-Runs, -Wick) %>%
+  arrange(-Strike_rate)
+
+
+ggplot(Teams_best5, aes(x = batting_team, group = 1)) + geom_line(aes(y = Bowl_avg)) + geom_line(aes(y = Batting_avg), col = 'red') + theme(axis.text.x = element_text(angle = 90))
+```
+
+
+
+##Ball wise avg runs
+
+```{r}
+balls = ipl %>% group_by(ball) %>% summarise(avg_runs = mean(batsman_runs), count = n()) %>% arrange(-count)
+kable(balls)
+```
+
+
+#total number of extra runs given in that ball
+
+```{r}
+extra = ipl %>% group_by(ball) %>% summarise(total_extra_runs = sum(extra_runs))
+kable(extra)
+```
+
+####According to this, the 4th ball is the best as the least number of extra runs have been given to the batting team.
+
+
+##Total number of runs given in that ball due to no ball
+
+```{r}
+noball = ipl %>% group_by(ball) %>% summarise(total_runs_noballs = sum(noball_runs), sum(Noball_runs_count))
+kable(noball)
+```
+
+## Total number of times a player has been responsible for a run out.
+
+```{r}
+player_run_out = ipl %>% filter(dismissal_kind == 'run out') %>% group_by(fielder) %>% summarise(count = n()) %>% arrange(-count)
+kable(player_run_out[1:10, ])
+```
+
+
+
+##Players who have retired due to getting hurt.
+
+```{r}
+player_hurt = ipl %>% filter(dismissal_kind == 'retired hurt') %>% group_by(batsman, batting_team) %>% summarise(count = n()) %>% arrange(-count)
+kable(player_hurt)
+```
+
+####There have been only 8 retire hurts in the history of ipl, 6 of whom have been from mumbai indians.
+
+
+
+```{r}
+pqr = ipl %>%
+  group_by(batting_team, Year) %>%
+  summarise(Sum = sum(total_runs))
+
+ggplot(pqr, aes(x = Year, y = Sum)) + geom_bar(fill = 'orange', stat = 'identity') + facet_wrap(~batting_team) + theme(axis.text.x = element_text(angle = 90)) 
+```
+
+
+
+
+
+
+
+
+
+
+
